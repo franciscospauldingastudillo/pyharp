@@ -1,0 +1,19 @@
+#pragma once
+
+// NetCDF output (NETCDFOUTPUT or NO_NETCDFOUTPUT)
+#define @NETCDF_OPTION@
+
+// PNetCDF output (PNETCDFOUTPUT or NO_PNETCDFOUTPUT)
+#define @PNETCDF_OPTION@
+
+// FITS option (FITSOUTPUT or NOT_FITSOUTPUT)
+#define @FITS_OPTION@
+
+// HDF5 output (HDF5OUTPUT or NO_HDF5OUTPUT)
+#define @HDF5_OPTION@
+
+#ifdef __CUDACC__
+  #define DISPATCH_MACRO __host__ __device__
+#else
+  #define DISPATCH_MACRO
+#endif

@@ -19,10 +19,6 @@
 // climath
 #include <climath/core.h>
 
-// application
-#include <application/application.hpp>
-#include <application/exceptions.hpp>
-
 // utils
 #include <utils/extract_substring.hpp>
 #include <utils/fileio.hpp>
@@ -36,38 +32,77 @@
 #include "radiation_band.hpp"
 #include "rt_solvers.hpp"
 
-RadiationBand::RadiationBand(std::string myname, YAML::Node const &rad,
-                             bool load_opacity)
-    : NamedGroup(myname) {
-  Application::Logger app("harp");
-  app->Log("Initialize RadiationBand " + myname);
+RadiationBandImpl::RadiationBandImpl(RadiationBandOptions const &options)
+    : options(options) {
+  reset();
+}
 
-  if (!rad[myname]) {
-    throw NotFoundError("RadiationBand", myname);
-  }
-
+RadiationBandImpl::reset() {
   auto my = rad[myname];
 
-  if (my["parameters"]) {
-    SetRealsFrom(my["parameters"]);
-  }
+  spec = register_buffer("spec",
+                         torch::tensor({options.nspec()}, torch::kFloat32));
 
-  pgrid_ = SpectralGridFactory::CreateFrom(my);
+  btau = register_buffer(
+      "btau", torch::zeros({options.nc3(), options.nc2(), options.nc1()},
+                           torch::kFloat32));
 
-  wrange_ = RadiationHelper::parse_wave_range(my);
+  tau = register_buffer(
+      "tau", torch::zeros({options.nc2(), options.nc1(), options.nspec()},
+                          torch::kFloat32));
 
-  if (my["outdir"]) {
-    if (!my["outdir"].IsSequence()) {
-      throw RuntimeError("RadiationBand", "outdir must be a sequence");
-    }
+  bssa = register_buffer(
+      "bssa", torch::zeros({options.nc3(), options.nc2(), options.nc1()},
+                           torch::kFloat32));
 
-    for (const auto &item : my["outdir"]) {
-      rayOutput_.push_back(
-          RadiationHelper::parse_radiation_direction(item.as<std::string>()));
-    }
+  ssa = register_buffer(
+      "ssa", torch::zeros({options.nc2(), options.nc1(), options.nspec()},
+                          torch::kFloat32));
+
+  bpmom =
+      register_buffer("bpmom", torch::zeros({options.nc3(), options.nc2(),
+                                             options.nc1(), 1 + options.nstr()},
+                                            torch::kFloat32));
+
+  pmom = register_buffer(
+      "pmom", torch::zeros({options.nc2(), options.nc1(), options.nspec(),
+                            1 + options.nstr()},
+                           torch::kFloat32));
+
+  bflxup = register_buffer(
+      "bflxup", torch::zeros({options.nc3(), options.nc2(), options.nc1() + 1},
+                             torch::kFloat32));
+
+  flxup = register_buffer(
+      "flxup", torch::zeros({options.nc2(), options.nc1(), options.nspec()},
+                            torch::kFloat32));
+
+  bflxdn = register_buffer(
+      "bflxdn", torch::zeros({options.nc3(), options.nc2(), options.nc1() + 1},
+                             torch::kFloat32));
+
+  flxdn = register_buffer(
+      "flxdn", torch::zeros({options.nc2(), options.nc1(), options.nspec()},
+                            torch::kFloat32));
+
+  btoa = register_buffer(
+      "btoa", torch::zeros({options.nc3(), options.nc2()}, torch::kFloat32));
+
+  toa = register_buffer(
+      "toa", torch::zeros({options.nc3(), options.nc2(), options.nspec()},
+                          torch::kFloat32));
+
+  auto str = options.outdirs();
+  if (!str.empty()) {
+    band.rayOutput = parse_radiation_directions(str);
+    register_buffer("rayOutput", band.rayOutput);
   }
 
   // set absorbers
+  for (auto name : options.absorbers()) {
+    absorbers[name] = Absorber(options.absorber_options().at(name));
+  }
+
   if (my["opacity"]) {
     if (!my["opacity"].IsSequence()) {
       throw RuntimeError("RadiationBand", "opacity must be a sequence");
@@ -98,21 +133,7 @@ RadiationBand::RadiationBand(std::string myname, YAML::Node const &rad,
   }
 
   // set rt solver
-  if (my["rt-solver"]) {
-    psolver_ = CreateRTSolverFrom(my["rt-solver"].as<std::string>(), rad);
-  } else {
-    psolver_ = nullptr;
-  }
-
-  char buf[80];
-  snprintf(buf, sizeof(buf), "%.2f - %.2f", wrange_.first, wrange_.second);
-  app->Log("Spectral range", buf);
-  app->Log("Number of spectral bins", pgrid_->spec.size());
-}
-
-RadiationBand::~RadiationBand() {
-  Application::Logger app("harp");
-  app->Log("Destroy RadiationBand " + GetName());
+  // rt_solver = CreateRTSolverFrom(my["rt-solver"].as<std::string>(), rad);
 }
 
 void RadiationBand::Resize(int nc1, int nc2, int nc3, int nstr,
@@ -166,19 +187,6 @@ void RadiationBand::Resize(int nc1, int nc2, int nc3, int nstr,
     psolver_->Resize(nblocks * (nc1 - 2 * NGHOST), nstr);
   }
 }
-
-AbsorberPtr RadiationBand::GetAbsorberByName(std::string const &name) {
-  for (auto &absorber : absorbers_) {
-    if (absorber->GetName() == name) {
-      return absorber;
-    }
-  }
-
-  throw NotFoundError("RadiationBand", "Absorber " + name);
-
-  return nullptr;
-}
-
 RadiationBand const *RadiationBand::CalBandFlux(MeshBlock const *pmb, int k,
                                                 int j) {
   // reset flux of this column
@@ -292,4 +300,40 @@ std::shared_ptr<RadiationBand::RTSolver> RadiationBand::CreateRTSolverFrom(
   }
 
   return psolver;
+}
+
+void RadiationBand::set_temperature_level(torch::Tensor hydro_x) {
+  tem_ = hydro_w[0];
+
+  // set temperature at cell interface
+  int il = NGHOST, iu = ac.size() - 1 - NGHOST;
+  temf_[il] = (3. * tem_[il] - tem_[il + 1]) / 2.;
+  temf_[il + 1] = (tem_[il] + tem_[il + 1]) / 2.;
+  for (int i = il + 2; i <= iu - 1; ++i)
+    temf_[i] = interp_cp4(tem_[i - 2], tem_[i - 1], tem_[i], tem_[i + 1]);
+  temf_[iu] = (tem_[iu] + tem_[iu - 1]) / 2.;
+  // temf_[iu + 1] = (3. * tem_[iu] - tem_[iu - 1]) / 2.;
+  temf_[iu + 1] = tem_[iu];  // isothermal top boundary
+
+  for (int i = 0; i < il; ++i) temf_[i] = tem_[il];
+  for (int i = iu + 2; i < ac.size(); ++i) temf_[i] = tem_[iu + 1];
+
+  bool error = false;
+  for (int i = 0; i < ac.size(); ++i) {
+    if (temf_[i] < 0.) {
+      temf_[i] = tem_[i];
+      // error = true;
+    }
+  }
+  for (int i = il; i <= iu; ++i) {
+    if (tem_[i] < 0.) error = true;
+  }
+  if (error) {
+    for (int i = il; i <= iu; ++i) {
+      std::cout << "--- temf[" << i << "] = " << temf_[i] << std::endl;
+      std::cout << "tem[" << i << "] = " << tem_[i] << std::endl;
+    }
+    std::cout << "--- temf[" << iu + 1 << "] = " << temf_[iu + 1] << std::endl;
+    throw std::runtime_error("Negative temperature at cell interface");
+  }
 }

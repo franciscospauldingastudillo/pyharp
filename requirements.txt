@@ -1,0 +1,10 @@
+astropy
+black
+cmake-format
+cmakelang
+cpplint
+h5py
+netcdf4
+numpy
+pre-commit
+torch
