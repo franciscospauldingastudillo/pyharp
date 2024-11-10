@@ -32,11 +32,11 @@ torch::Tensor RadiationBand::forward(torch::Tensor x1f, torch::Tensor ftoa,
   ssa_.ZeroClear();
   pmom_.ZeroClear();
 
-  for (auto& a : absorbers_) {
-    auto [kcoeff, ssalb, moments] = a.forward(var_x);
-    tau_ += kcoeff;
-    ssa_ += ssalb * kcoeff;
-    pmom_ += moments * ssalb * kcoeff;
+  for (auto a : attenuators) {
+    auto kdata = a.forward(var_x);
+    tau_ += kdata[IAB];
+    ssa_ += kdata[ISS] * kdata[IAB];
+    pmom_ += moments * kdata[ISS] * kdata[IAB];
   }
 
   // absorption coefficients -> optical thickness
@@ -68,5 +68,5 @@ torch::Tensor RadiationBand::forward(torch::Tensor x1f, torch::Tensor ftoa,
     btau(k, j, i) /= nspec;
   }
 
-  return solver.forward(ftoa, tau_, ssa_, pmom_);
+  return solver.forward(ftoa, opt);
 }

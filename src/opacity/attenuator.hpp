@@ -7,19 +7,17 @@
 #include <torch/nn/modules/container/any.h>
 
 // harp
+#include <add_arg.h>
 #include <configure.h>
+#include <index.h>
 
-#include "add_arg.h"
+#include "atm_to_standard_grid.hpp"
 
 namespace harp {
-enum index {
-  ITM = 0,  // temperature
-}
-
 struct AttenuatorOptions {
   AttenuatorOptions() = default;
 
-  ADD_ARG(int, npmom) = 1;
+  ADD_ARG(int, npmom) = 0;
   ADD_ARG(int, nspec) = 1;
   ADD_ARG(int, ncomp) = 1;
   ADD_ARG(int, npres) = 1;
@@ -40,65 +38,42 @@ class AttenuatorImpl {
   AttenuatorOptions options;
 
   //! constructor to initialize the layer
-  AttenuatorImpl() = default;
+  AttenuatorImpl(AttenuatorOptions const& options_) : options(options_) {}
   virtual ~AttenuatorImpl() {}
 
   //! main forward function
-  virtual std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> forward(
-      torch::Tensor var_x);
-
-  //! get attenuation coefficient [1/m]
-  virtual torch::Tensor attenuation(torch::Tensor var_x) const;
-
-  //! get single scattering albedo [1]
-  virtual torch::Tensor single_scattering_albedo(torch::Tensor var_x) const;
-
-  //! get phase function moments [1]
-  virtual torch::Tensor phase_moments(torch::Tensor var_x) const;
+  //! \param var_x input atmospheric variables of size (X, levels)
+  //!              where X is the number of variables
+  //!              and levels is the number of vertical levels
+  //! \return tensor of size (batch, specs, comps, levels, temps)
+  //!         where the first index in batch dimension is the attenuation
+  //!         coefficient and the second index is the single scattering albedo
+  //!         and the rest of the indices are the phase function moments
+  //!         (excluding the zeroth moment). The units of the attenuation
+  //!         coefficient are [1/m] The single scattering albedo is
+  //!         dimensionless
+  virtual torch::Tensor forward(torch::Tensor var_x);
 };
 
 using Attenuator = std::shared_ptr<AttenuatorImpl>;
 
-class InterpAttenuatorImpl : public AttenuatorImpl {
+class AbsorberRFMImpl : public AttenuatorImpl,
+                        public torch::nn::Cloneable<AbsorberRFMImpl> {
  public:
+  //! extinction x-section + single scattering albedo + phase function moments
+  //! (batch, specs, comps, levels, temps)
+  torch::Tensor kdata;
+
+  //! scale the atmospheric variables to the standard grid
+  AtmToStandardGrid scale_grid;
+
   //! constructor to initialize the layer
-  explicit InterpAttenuatorImpl(AttenuatorOptions const& options_)
-      : options(options_) {}
-  void load() override;
-  torch::Tensor scaled_interp_xpt(torch::Tensor var_x) const override;
+  explicit AbsorberRFMImpl(AttenuatorOptions const& options_)
+      : AttenuatorImpl(options_) {}
+  virtual void load();
 
-  torch::Tensor InterpAttenuator::attenuation(
-      torch::Tensor var_x) const override;
-
- protected:
-  //! reference atmosphere
-  //! (X, levels)
-  torch::Tensor refatm_;
-
-  //! log pressure
-  //! (levels,)
-  torch::Tensor logp_;
-
-  //! temperature
-  //! (levels,)
-  torch::Tensor temp_;
-
-  //! composition
-  //! (levels,)
-  torch::Tensor comp_;
-
-  //! absorption x-section
-  //! (specs, comps, levels, temps)
-  torch::Tensor kcross_;
-
-  //! single scattering albedo
-  //! (specs, comps, levels, temps)
-  torch::Tensor kssa_;
-
-  //! phase function moments
-  //! (pmoms, specs, comps, levels, temps)
-  torch::Tensor kpmom_;
+  torch::Tensor forward(torch::Tensor var_x) override;
 };
+TORCH_MODULE(AbsorberRFM);
 
-class AbsorberRFMImpl;
 }  // namespace harp

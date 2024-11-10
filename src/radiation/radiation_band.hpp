@@ -33,51 +33,24 @@ struct RadiationBandOptions {
 
 class RadiationBandImpl : public torch::nn::Cloneable<RadiationBandImpl> {
  public:  // public access data
-  // implementation of RT Solver
-  class RTSolver;
-  class RTSolverLambert;
-  class RTSolverDisort;
-
   //! options with which this `RadiationBandImpl` was constructed
   RadiationOptions options;
 
   //! radiative transfer solver
-  std::shared_ptr<RTSolver> rt_solver;
+  RTSolver rt_solver;
 
   //! all absorbers
-  std::map<std::string, Absorber> absorbers;
+  std::map<std::string, Absorber> attenuators;
 
-  //! spectral grid with weights
-  //! (nspec, 2) or (nspec + 1, 2)
-  torch::Tensor spec;
+  //! spectral grid weights (nspec)
+  torch::Tensor weight;
 
   //! outgoing rays
   //! (nout, 2)
   tourch::Tensor rayOutput;
 
-  //! band/bin optical depth
-  //! (nspec, nlevel)
-  torch::Tensor btau, tau;
-
-  //! band/bin single scattering albedo
-  //! (nspec, nlevel)
-  torch::Tensor bssa, ssa;
-
-  //! band/bin phase function moments
-  //! (nspec, nlevel, 1 + npmom)
-  torch::Tensor bpmom, pmom;
-
-  //! band/bin upward flux (shallow reference to fluxup)
-  //! (nspec, nlevel)
-  torch::Tensor bflxup, flxup;
-
-  //! band/bin downward flux (shallow reference to flxdn)
-  //! (nspec, nlevel)
-  torch::Tensor bflxdn, flxdn;
-
-  //! \brief band radiance
-  //! (nspec, nlevel)
-  torch::Tensor brad, rad;
+  //! band/bin optical data, (tau + ssa + pmom, C, ..., nlayer)
+  torch::Tensor opt;
 
   //! Constructor to initialize the layers
   RadiationBandImpl() = default;

@@ -11,71 +11,21 @@ extern "C" {
 #endif
 
 namespace harp {
-InterpAttenuatorImpl(AttenuatorOptions const& options_) : options(options_) {
+AbsorberRFMImpl(AttenuatorOptions const& options_) : options(options_) {
   reset();
 }
 
-void InterpAttenuatorImpl::reset() {
-  refatm_ = register_buffer(
-      "refatm",
-      torch::zeros({1 + optioins.ncomp(), options.nlevel()}, torch::kFloat));
-
-  logp_ =
-      register_buffer("logp", torch::zeros({options.nlevel()}, torch::kFloat));
-
-  temp_ =
-      register_buffer("temp", torch::zeros({options.ntemp()}, torch::kFloat));
-
-  comp_ =
-      register_buffer("comp", torch::zeros({options.ncomp()}, torch::kFloat));
-
-  kcross_ = register_buffer("kcross",
-                            torch::zeros({options.nspec(), options.ncomp(),
-                                          options.nlevel(), options.ntemp()},
-                                         torch::kFloat));
-  kssa_ =
-      register_buffer("kssa", torch::zeros({options.nspec(), options.ncomp(),
-                                            options.nlevel(), options.ntemp()},
-                                           torch::kFloat));
-  kpmom_ = register_buffer(
-      "kpmom", torch::zeros({options.npmom(), options.nspec(), options.ncomp(),
-                             options.nlevel(), options.ntemp()},
-                            torch::kFloat));
-
+void AbsorberRFMImpl::reset() {
+  kdata = register_buffer(
+      "kdata",
+      torch::zeros({1 + options.npmom(), options.nspec(), options.ncomp(),
+                    options.nlevel(), options.ntemp()},
+                   torch::kFloat));
+  scale_grid = register_module("scale_grid", AtmToStandardGrid(options));
   load();
 }
 
-torch::Tensor InterpAttenuatorImpl::scaled_interp_xpt(
-    torch::Tensor var_x) const {
-  // log pressure
-  auto log_refp = refatm_[index::IPR];
-  auto logp = pres.log().flatten();
-
-  auto log_refp_min = log_refp.min();
-  auto log_refp_max = log_refp.max();
-
-  // rescale logp to [-1, 1]
-  return (2.0 * (logp - log_refp_min) / (log_refp_max - log_refp_min) - 1.0)
-      .view(pres.sizes());
-
-  auto logp_scaled = torch::zeros({logp.sizes(0), 2}, logp.options());
-  logp_scaled.select(1, 1) = pscale;
-
-  auto tem = refatm_[index::ITM].view({1, 1, 1, -1}).expand({1, 1, 2, -1});
-  auto grid = logp_scaled.view({1, 1, -1, 2});
-
-  // rescale tema to [-1, 1]
-  auto tgrid = 2.0 * (tema - tema_.min()) / (tema_max - tema_.max()) - 1.0;
-
-  // rescale xcomp to [-1, 1]
-  auto xgrid = 2.0 * (xcom - xcom_.min()) / (xcom_max - xcom_.max()) - 1.0;
-
-  return {
-      torch::grid_sample(tem, grid, "bilinear", "border").view(pres.sizes()),
-      logp_scaled.select(1, 1)};
-}
-
-void InterpAttenuator::load() {
+void AbsorberRFMImpl::load() {
 #ifdef NETCDFOUTPUT
   int fileid, dimid, varid, err;
   nc_open(options.opacity_file.c_str(), NC_NETCDF4, &fileid);
@@ -130,11 +80,11 @@ void InterpAttenuator::load() {
 #endif
 }
 
-torch::Tensor InterpAttenuator::attenuation(torch::Tensor var_x) const {
-  auto grid = get_scaled_xpt(var_x);
+torch::Tensor AbsorberRFMImpl::forward(torch::Tensor var_x) const {
+  auto grid = scale_grid.forward(var_x, options.species_id[0]);
 
   // interpolate to model grid
-  auto kcross = torch::grid_sample(kcross_, grid, "bilinear", "border");
+  auto kcross = torch::grid_sample(kdata, grid, "bilinear", "border");
 
   auto x0 = var_x[options.species_id[0]];
   auto dens = x0 * var_x[index::IPR] / (Constants::Rgas * var_x[index::ITM]);
