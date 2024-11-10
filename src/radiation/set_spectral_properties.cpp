@@ -33,7 +33,7 @@ torch::Tensor RadiationBand::forward(torch::Tensor x1f, torch::Tensor ftoa,
   pmom_.ZeroClear();
 
   for (auto& a : absorbers_) {
-    auto [kcoeff, ssalb, moments] = a.forward(spec, hydro_x, scalar_x);
+    auto [kcoeff, ssalb, moments] = a.forward(var_x);
     tau_ += kcoeff;
     ssa_ += ssalb * kcoeff;
     pmom_ += moments * ssalb * kcoeff;
