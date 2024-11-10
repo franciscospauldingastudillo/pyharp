@@ -8,6 +8,7 @@
 
 // harp
 #include <configure.h>
+
 #include "add_arg.h"
 
 namespace harp {
@@ -66,7 +67,8 @@ class InterpAttenuatorImpl : public AttenuatorImpl {
   void load() override;
   torch::Tensor scaled_interp_xpt(torch::Tensor var_x) const override;
 
-  torch::Tensor InterpAttenuator::attenuation(torch::Tensor var_x) const override;
+  torch::Tensor InterpAttenuator::attenuation(
+      torch::Tensor var_x) const override;
 
  protected:
   //! reference atmosphere
@@ -98,5 +100,5 @@ class InterpAttenuatorImpl : public AttenuatorImpl {
   torch::Tensor kpmom_;
 };
 
-class AbsorberRFMImpl : public torch::nn::Cloneable<InterpAttenuatorImpl>,
+class AbsorberRFMImpl;
 }  // namespace harp

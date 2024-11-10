@@ -14,7 +14,7 @@
 #   target_link_libraries(harp::harp)
 #
 # Compile the following submodules
-# 
+#
 #   opacity   : opacity providers
 #   radiation : radiation and radiation bands
 #   utils     : utility functions

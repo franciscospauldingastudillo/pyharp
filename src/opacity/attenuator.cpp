@@ -1,11 +1,11 @@
 // harp
 #include <utils/find_resource.hpp>
+
 #include "absorber.hpp"
 
 namespace harp {
 //! main forward function
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> 
-AbsorberImpl::forward(
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> AbsorberImpl::forward(
     torch::Tensor spec, torch::Tensor var_x) {
   return {attenuation(spec, var_x), single_scattering_albedo(spec, var_x),
           phase_moments(spec, var_x)};
@@ -21,7 +21,8 @@ torch::Tensor AbsorberImpl::attenuation(torch::Tensor var_x) const {
 }
 
 //! get single scattering albedo [1]
-torch::Tensor AbsorberImpl::single_scattering_albedo(torch::Tensor var_x) const {
+torch::Tensor AbsorberImpl::single_scattering_albedo(
+    torch::Tensor var_x) const {
   // shape of the original tensor
   auto var_shape = var_x.sizes().vec();
   var_shape.push_back(1);
@@ -40,7 +41,7 @@ torch::Tensor AbsorberImpl::phase_moments(torch::Tensor var_x) const {
 
 torch::Tensor AbsorberImp::scaled_interp_xpt(torch::Tensor var_x) const
 
-void Absorber::LoadOpacity(int bid) {
+    void Absorber::LoadOpacity(int bid) {
   auto app = Application::GetInstance();
   auto log = app->GetMonitor("opacity");
 

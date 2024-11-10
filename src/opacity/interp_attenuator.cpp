@@ -1,5 +1,6 @@
 // harp
 #include <constants.hpp>
+
 #include "attenuator.hpp"
 
 // netcdf
@@ -15,22 +16,37 @@ InterpAttenuatorImpl(AttenuatorOptions const& options_) : options(options_) {
 }
 
 void InterpAttenuatorImpl::reset() {
-  refatm_ = register_buffer("refatm", torch::zeros({1 + optioins.ncomp(), options.nlevel()}, torch::kFloat));
+  refatm_ = register_buffer(
+      "refatm",
+      torch::zeros({1 + optioins.ncomp(), options.nlevel()}, torch::kFloat));
 
-  logp_ = register_buffer("logp", torch::zeros({options.nlevel()}, torch::kFloat));
+  logp_ =
+      register_buffer("logp", torch::zeros({options.nlevel()}, torch::kFloat));
 
-  temp_ = register_buffer("temp", torch::zeros({options.ntemp()}, torch::kFloat));
+  temp_ =
+      register_buffer("temp", torch::zeros({options.ntemp()}, torch::kFloat));
 
-  comp_ = register_buffer("comp", torch::zeros({options.ncomp()}, torch::kFloat));
+  comp_ =
+      register_buffer("comp", torch::zeros({options.ncomp()}, torch::kFloat));
 
-  kcross_ = register_buffer("kcross", torch::zeros({options.nspec(), options.ncomp(), options.nlevel(), options.ntemp()}, torch::kFloat));
-  kssa_ = register_buffer("kssa", torch::zeros({options.nspec(), options.ncomp(), options.nlevel(), options.ntemp()}, torch::kFloat));
-  kpmom_ = register_buffer("kpmom", torch::zeros({options.npmom(), options.nspec(), options.ncomp(), options.nlevel(), options.ntemp()}, torch::kFloat));
+  kcross_ = register_buffer("kcross",
+                            torch::zeros({options.nspec(), options.ncomp(),
+                                          options.nlevel(), options.ntemp()},
+                                         torch::kFloat));
+  kssa_ =
+      register_buffer("kssa", torch::zeros({options.nspec(), options.ncomp(),
+                                            options.nlevel(), options.ntemp()},
+                                           torch::kFloat));
+  kpmom_ = register_buffer(
+      "kpmom", torch::zeros({options.npmom(), options.nspec(), options.ncomp(),
+                             options.nlevel(), options.ntemp()},
+                            torch::kFloat));
 
   load();
 }
 
-torch::Tensor InterpAttenuatorImpl::scaled_interp_xpt(torch::Tensor var_x) const {
+torch::Tensor InterpAttenuatorImpl::scaled_interp_xpt(
+    torch::Tensor var_x) const {
   // log pressure
   auto log_refp = refatm_[index::IPR];
   auto logp = pres.log().flatten();
@@ -39,7 +55,8 @@ torch::Tensor InterpAttenuatorImpl::scaled_interp_xpt(torch::Tensor var_x) const
   auto log_refp_max = log_refp.max();
 
   // rescale logp to [-1, 1]
-  return (2.0 * (logp - log_refp_min) / (log_refp_max - log_refp_min) - 1.0).view(pres.sizes());
+  return (2.0 * (logp - log_refp_min) / (log_refp_max - log_refp_min) - 1.0)
+      .view(pres.sizes());
 
   auto logp_scaled = torch::zeros({logp.sizes(0), 2}, logp.options());
   logp_scaled.select(1, 1) = pscale;
@@ -53,7 +70,9 @@ torch::Tensor InterpAttenuatorImpl::scaled_interp_xpt(torch::Tensor var_x) const
   // rescale xcomp to [-1, 1]
   auto xgrid = 2.0 * (xcom - xcom_.min()) / (xcom_max - xcom_.max()) - 1.0;
 
-  return {torch::grid_sample(tem, grid, "bilinear", "border").view(pres.sizes()), logp_scaled.select(1, 1)};
+  return {
+      torch::grid_sample(tem, grid, "bilinear", "border").view(pres.sizes()),
+      logp_scaled.select(1, 1)};
 }
 
 void InterpAttenuator::load() {
@@ -93,7 +112,7 @@ void InterpAttenuator::load() {
     throw std::runtime_error(nc_strerror(err));
   }
 
-  Real *temp = new Real[len_[1]];
+  Real* temp = new Real[len_[1]];
   nc_inq_varid(fileid, "Temperature", &varid);
   nc_get_var_double(fileid, varid, temp);
 
@@ -122,4 +141,4 @@ torch::Tensor InterpAttenuator::attenuation(torch::Tensor var_x) const {
   return 1.E-3 * kcross.exp() * dens;  // ln(m^2/kmol) -> 1/m
 }
 
-} // namespace harp
+}  // namespace harp
