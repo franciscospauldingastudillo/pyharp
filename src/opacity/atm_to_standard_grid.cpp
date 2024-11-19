@@ -1,40 +1,55 @@
+#include "atm_to_standard_grid.hpp"
 
 void AtmToStandardGrid::reset() {
+  xgrid =
+      register_buffer("xgrid", torch::zeros({options.ncomp()}, torch::kFloat));
+  tgrid =
+      register_buffer("tgrid", torch::zeros({options.ntemp()}, torch::kFloat));
+
   refatm = register_buffer("refatm",
-                           torch::zeros({3, options.nlevel()}, torch::kFloat));
-
-  taxis =
-      register_buffer("taxis", torch::zeros({options.ntemp()}, torch::kFloat));
-
-  xaxis =
-      register_buffer("comp", torch::zeros({options.ncomp()}, torch::kFloat));
+                           torch::zeros({3, options.npres()}, torch::kFloat));
 }
 
-torch::Tensor AtmToStandardGrid::forward(torch::Tensor var_x) const {
-  // log pressure
-  auto log_refp = refatm_[index::IPR];
-  auto logp = pres.log().flatten();
+torch::Tensor AtmToStandardGrid::forward(torch::Tensor var_x, int ix) {
+  auto var_shape = var_x[0].sizes().vec();
+  var_shape.push_back(3);
+  auto out = torch::zeros(var_shape, var_x.options());
+
+  // rescale log pressure to [-1, 1]
+  auto log_refp = refatm[index::IPR].log();
+  auto logp = var_x[index::IPR].flatten().log();
 
   auto log_refp_min = log_refp.min();
   auto log_refp_max = log_refp.max();
 
-  // rescale logp to [-1, 1]
-  return (2.0 * (logp - log_refp_min) / (log_refp_max - log_refp_min) - 1.0)
-      .view(pres.sizes());
+  logp_scaled =
+      2.0 * (logp - log_refp_min) / (log_refp_max - log_refp_min) - 1.0;
 
-  auto logp_scaled = torch::zeros({logp.sizes(0), 2}, logp.options());
-  logp_scaled.select(1, 1) = pscale;
+  out.select(3, index::IPR) = logp_scaled.view(var_shape);
 
-  auto tem = refatm_[index::ITM].view({1, 1, 1, -1}).expand({1, 1, 2, -1});
-  auto grid = logp_scaled.view({1, 1, -1, 2});
+  // 2d interpolation grid for reference atmosphere
+  auto grid = torch::zeros({1, 1, refatm.sizes(1), 2}, refatm.options());
+  grid.select(3, index::IPR) = logp_scaled;
 
-  // rescale tema to [-1, 1]
-  auto tgrid = 2.0 * (tema - tema_.min()) / (tema_max - tema_.max()) - 1.0;
+  // interpolated reference temperature at given pressure
+  auto reftem = refatm[index::ITM].view({1, 1, 1, -1}).expand({1, 1, 2, -1});
+  auto tem =
+      torch::grid_sample(reftem, grid, "bilinear", "border").view(var_shape);
 
-  // rescale xcomp to [-1, 1]
-  auto xgrid = 2.0 * (xcom - xcom_.min()) / (xcom_max - xcom_.max()) - 1.0;
+  // rescale temperature anomaly to [-1, 1]
+  auto tema = var_x[index::ITM] - tem;
+  out.select(3, index::ITM) =
+      2.0 * (tema - tgrid.min()) / (tgrid.max() - tgrid.min()) - 1.0;
 
-  return {
-      torch::grid_sample(tem, grid, "bilinear", "border").view(pres.sizes()),
-      logp_scaled.select(1, 1)};
+  // interpolated reference composition at given pressure
+  auto refcom = refatm[index::ICX].view({1, 1, 1, -1}).expand({1, 1, 2, -1});
+  auto com =
+      torch::grid_sample(refcom, grid, "bilinear", "border").view(var_shape);
+
+  // rescale composition scaling to [-1, 1]
+  auto comx = var_x[ix] / (com + 1.e-10);  // prevent divide by zero
+  out.select(3, index::ICX) =
+      2.0 * (comx - xgrid.min()) / (grid.max() - xgrid.min()) - 1.0;
+
+  return out;
 }

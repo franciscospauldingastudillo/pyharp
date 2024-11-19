@@ -1,28 +1,16 @@
 // harp
-#include <utils/find_resource.hpp>
-
-#include "absorber.hpp"
+#include "attenuator.hpp"
 
 namespace harp {
-//! get attenuation coefficient [1/m]
-torch::Tensor AbsorberImpl::forward(torch::Tensor var_x) const {
+torch::Tensor AttenuatorImpl::forward(torch::Tensor var_x) const {
   // shape of the original tensor
   auto var_shape = var_x.sizes().vec();
   var_shape.insert(var_shape.begin(), 1);
-  auto out = torch::zeros(var_shape, var_x.options());
-  return out;
-}
 
-torch::Tensor AbsorberImp::forward(torch::Tensor var_x) const {};
+  // tau + ssa + phase moments starting from 1st order
+  var_shape[0] = 2 + options.npmom();
+  var_shape[1] = optinos.nspec();
 
-void Absorber::LoadOpacity(int bid) {
-  auto app = Application::GetInstance();
-  auto log = app->GetMonitor("opacity");
-
-  if (opacity_filename_.empty()) return;
-
-  std::string full_path = app->FindResource(opacity_filename_);
-  log->Log("Load opacity from " + full_path);
-  LoadCoefficient(full_path, bid);
+  return torch::zeros(var_shape, var_x.options());
 }
 }  // namespace harp

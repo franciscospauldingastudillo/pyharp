@@ -1,5 +1,7 @@
 // harp
-#include <constants.hpp>
+#include <constants.h>
+
+#include <utils/find_resource.hpp>
 
 #include "attenuator.hpp"
 
@@ -26,9 +28,12 @@ void AbsorberRFMImpl::reset() {
 }
 
 void AbsorberRFMImpl::load() {
+  if (opttions.opacity_file().empty()) return;
+  std::string full_path = find_resource(options.opacity_file());
+
 #ifdef NETCDFOUTPUT
   int fileid, dimid, varid, err;
-  nc_open(options.opacity_file.c_str(), NC_NETCDF4, &fileid);
+  nc_open(full_path.c_str(), NC_NETCDF4, &fileid);
 
   nc_inq_dimid(fileid, "Wavenumber", &dimid);
   nc_inq_dimlen(fileid, dimid, len_);
@@ -62,7 +67,7 @@ void AbsorberRFMImpl::load() {
     throw std::runtime_error(nc_strerror(err));
   }
 
-  Real* temp = new Real[len_[1]];
+  float* temp = new float[len_[1]];
   nc_inq_varid(fileid, "Temperature", &varid);
   nc_get_var_double(fileid, varid, temp);
 
@@ -72,22 +77,25 @@ void AbsorberRFMImpl::load() {
     refatm_(IDN, i) = temp[i];
   }
 
-  kcross_.resize(len_[0] * len_[1] * len_[2]);
-  nc_inq_varid(fileid, GetName().c_str(), &varid);
-  nc_get_var_double(fileid, varid, kcross_.data());
+  kdata = torch::zeros((2 + options.npmom(), options.nspec(), options.npres(),
+                        options.ntemp(), options.ncomp()),
+                       torch::kFloat);
+
+  nc_inq_varid(fileid, options.name().c_str(), &varid);
+  nc_get_var_double(fileid, varid, kdata.data());
   nc_close(fileid);
   delete[] temp;
 #endif
 }
 
 torch::Tensor AbsorberRFMImpl::forward(torch::Tensor var_x) const {
-  auto grid = scale_grid.forward(var_x, options.species_id[0]);
+  auto grid = scale_grid.forward(var_x, options.var_id()[0]);
 
   // interpolate to model grid
   auto kcross = torch::grid_sample(kdata, grid, "bilinear", "border");
 
-  auto x0 = var_x[options.species_id[0]];
-  auto dens = x0 * var_x[index::IPR] / (Constants::Rgas * var_x[index::ITM]);
+  auto x0 = var_x[options.var_id()[0]];
+  auto dens = x0 * var_x[index::IPR] / (constants::Rgas * var_x[index::ITM]);
   return 1.E-3 * kcross.exp() * dens;  // ln(m^2/kmol) -> 1/m
 }
 

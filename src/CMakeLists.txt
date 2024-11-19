@@ -47,18 +47,18 @@ set_target_properties(${namel}_${buildl}
     COMPILE_FLAGS "${CMAKE_CXX_FLAGS_${buildu}}"
     )
 
-add_subdirectory(opacity)
-add_subdirectory(radiation)
+#add_subdirectory(opacity)
+#add_subdirectory(radiation)
+#add_subdirectory(rtsolver)
 add_subdirectory(utils)
-add_subdirectory(rtsolver)
 
 add_library(${namel}_${buildl}_final
   STATIC
   $<TARGET_OBJECTS:${namel}_${buildl}>
-  $<TARGET_OBJECTS:opacity_${buildl}>
-  $<TARGET_OBJECTS:radiation_${buildl}>
+  #$<TARGET_OBJECTS:opacity_${buildl}>
+  #$<TARGET_OBJECTS:radiation_${buildl}>
+  #$<TARGET_OBJECTS:rtsolver_${buildl}>
   $<TARGET_OBJECTS:utils_${buildl}>
-  $<TARGET_OBJECTS:rtsolver_${buildl}>
   )
 
 add_library(harp::harp ALIAS ${namel}_${buildl}_final)
