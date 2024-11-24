@@ -1,5 +1,8 @@
 #pragma once
 
+// C/C++
+#include <future>
+
 // torch
 #include <torch/nn/cloneable.h>
 #include <torch/nn/module.h>
@@ -7,11 +10,16 @@
 #include <torch/nn/modules/container/any.h>
 
 // harp
-#include "add_arg.h"
-#include "configure.h"
+// clang-format off
+#include <configure.h>
+#include <add_arg.h>
+// clang-format on
 #include "radiation_band.hpp"
 
 namespace harp {
+extern std::unordered_map<std::string, std::shared_future<torch::Tensor>>
+    shared;
+
 struct RadiationOptions {
   RadiationOptions() = default;
 
@@ -20,16 +28,13 @@ struct RadiationOptions {
   ADD_ARG(bool, flux_flag) = false;
   ADD_ARG(bool, time_dependent) = false;
   ADD_ARG(bool, broad_band) = false;
-  ADD_ARG(bool, thermal_emission) = false;
   ADD_ARG(bool, stellar_beam) = false;
-  ADD_ARG(bool, normalize) = false;
   ADD_ARG(bool, write_bin_radiance) = false;
-  ADD_ARG(bool, spectral_bin) = false;
 
   ADD_ARG(std::string, indirs) = "(0.,0.)";
   ADD_ARG(std::string, outdirs) = "";
   ADD_ARG(std::vector<std::string>, bands) = {};
-  ADD_ARG(std::map<std::string, RadiationBandOptions>, band_options) = {};
+  ADD_ARG(std::vector<RadiationBandOptions>, band_options) = {};
 
   void set_flags(std::string const& str);
 };
@@ -42,10 +47,6 @@ class RadiationImpl : public torch::nn::Cloneable<RadiationImpl> {
   //! vertical coordinate
   torch::Tensor x1f;
 
-  //! incomming rays
-  //! (nray, 2)
-  torch::Tensor rayInput;
-
   //! RadiationBands
   std::map<std::string, RadiationBand> bands;
 
@@ -55,7 +56,7 @@ class RadiationImpl : public torch::nn::Cloneable<RadiationImpl> {
   void reset() override;
 
   //! \brief Calculate the radiance/radiative flux
-  torch::Tensor forward(torch::Tensor ftoa, torch::Tensor var_x);
+  torch::Tensor forward(torch::Tensor ftoa, torch::Tensor var_x, float ray[2]);
 };
 TORCH_MODULE(Radiation);
 

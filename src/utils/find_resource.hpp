@@ -2,6 +2,7 @@
 
 // C/C++
 #include <string>
+#include <vector>
 
 namespace harp {
 extern char search_paths[65536];
@@ -79,7 +80,7 @@ void add_resource_directory(std::string const& dir);
  * opened for reading by the current user.
  *
  * \param name Name of the input file to be searched for
- * @return  The absolute path name of the first matching file
+ * \return  The absolute path name of the first matching file
  *
  * If the file is not found an exception is thrown.
  *

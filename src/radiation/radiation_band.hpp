@@ -1,5 +1,8 @@
 #pragma once
 
+// C/C++
+#include <future>
+
 // torch
 #include <torch/nn/cloneable.h>
 #include <torch/nn/module.h>
@@ -7,19 +10,27 @@
 #include <torch/nn/modules/container/any.h>
 
 // harp
-#include "absorber.hpp"
-#include "add_arg.h"
-#include "configure.h"
+// clang-format off
+#include <configure.h>
+#include <add_arg.h>
+// clang-format on
+
+#include <opacity/attenuator.hpp>
+#include <rtsolver/rtsolver.hpp>
+#include <utils/layer2level.hpp>
 
 namespace harp {
 struct RadiationBandOptions {
+  RadiationBandOptions() = default;
+
   ADD_ARG(std::string, name) = "B1";
   ADD_ARG(std::string, outdirs) = "";
-  ADD_ARG(std::vector<std::string>, absorbers) = {};
-  ADD_ARG(std::string, solver) = "lambert";
-  ADD_ARG(std::map<std::string, float>, parameters) = {};
-  ADD_ARG(std::map<std::string, AbsorberOptions>, absorber_options) = {};
-  // ADD_ARG(SolverOptions, solver_options) = {};
+  ADD_ARG(std::string, solver_name) = "lambert";
+
+  ADD_ARG(std::vector<std::string>, attenuators) = {};
+  ADD_ARG(std::vector<AttenuatorOptions>, attenuator_options) = {};
+  ADD_ARG(Layer2LevelOptions, l2l_options);
+  ADD_ARG(DisortOptions, disort_options);
 
   ADD_ARG(int, nstr) = 1;
   ADD_ARG(int, nspec) = 1;
@@ -32,41 +43,44 @@ struct RadiationBandOptions {
 };
 
 class RadiationBandImpl : public torch::nn::Cloneable<RadiationBandImpl> {
- public:  // public access data
+ public:
   //! options with which this `RadiationBandImpl` was constructed
-  RadiationOptions options;
+  RadiationBandOptions options;
 
   //! radiative transfer solver
-  RTSolver rt_solver;
+  RTSolver solver;
 
-  //! all absorbers
-  std::map<std::string, Absorber> attenuators;
+  //! all attenuators
+  std::map<std::string, Attenuator> attenuators;
 
-  //! spectral grid weights (nspec)
-  torch::Tensor weight;
+  //! spectral grid and weights
+  //! (2, nspec)
+  torch::Tensor spec;
 
-  //! outgoing rays
+  //! bin optical properties
+  //! 5D tensor with shape (tau + ssa + pmom, C, ..., nlayer)
+  torch::Tensor prop;
+
+  //! outgoing rays (mu, phi)
   //! (nout, 2)
-  tourch::Tensor rayOutput;
-
-  //! band/bin optical data, (tau + ssa + pmom, C, ..., nlayer)
-  torch::Tensor opt;
+  torch::Tensor rayOutput;
 
   //! Constructor to initialize the layers
   RadiationBandImpl() = default;
   explicit RadiationBandImpl(RadiationBandOptions const &options_);
   void reset() override;
+  std::string to_string() const;
+  void load_opacity();
 
   //! \brief Calculate the radiance/radiative flux
   torch::Tensor forward(torch::Tensor x1f, torch::Tensor ftoa,
-                        torch::Tensor var_x);
-
- protected:
-  void set_temperature_level_(torch::Tensor hydro_x);
+                        torch::Tensor var_x, float ray[2],
+                        torch::optional<torch::Tensor> area = torch::nullopt,
+                        torch::optional<torch::Tensor> vol = torch::nullopt);
 };
-TORCH_MODULE(RadiationBandImpl);
+TORCH_MODULE(RadiationBand);
 
-class RadiationBandsFactory {
+/*class RadiationBandsFactory {
  public:
   static RadiationBandContainer CreateFrom(ParameterInput *pin,
                                            std::string key);
@@ -82,6 +96,6 @@ class RadiationBandsFactory {
  protected:
   static std::map<std::string, int> band_id_;
   static int next_band_id_;
-};
+};*/
 
 }  // namespace harp
