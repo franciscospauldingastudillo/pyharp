@@ -1,10 +1,3 @@
-// harp
-#include <constants.h>
-
-#include <utils/find_resource.hpp>
-
-#include "attenuator.hpp"
-
 // netcdf
 #ifdef NETCDFOUTPUT
 extern "C" {
@@ -12,7 +5,20 @@ extern "C" {
 }
 #endif
 
+// base
+#include <constants.h>
+
+// harp
+#include <utils/find_resource.hpp>
+
+#include "attenuator.hpp"
+
 namespace harp {
+AbsorberRFMImpl::AbsorberRFMImpl(AttenuatorOptions const& options_)
+    : AttenuatorImpl(options_) {
+  reset();
+}
+
 void AbsorberRFMImpl::reset() {
   kdata = register_buffer(
       "kdata",
@@ -24,8 +30,8 @@ void AbsorberRFMImpl::reset() {
 }
 
 void AbsorberRFMImpl::load() {
-  if (options.opacity_file().empty()) return;
-  std::string full_path = find_resource(options.opacity_file());
+  if (options.opacity_files().empty()) return;
+  std::string full_path = find_resource(options.opacity_files()[0]);
 
 #ifdef NETCDFOUTPUT
   int fileid, dimid, varid, err;

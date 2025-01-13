@@ -7,19 +7,18 @@
 #
 #   HARP_INCLUDE_DIR
 #   CDISORT_INCLUDE_DIR
-#   harp::harp
+#   HARP_LIBRARY_DEBUG
+#   HARP_LIBRARY_RELEASE
 #   harp::cdisort
 #
 # Normal usage would be:
 #
 #   include_directories(${HARP_INCLUDE_DIR})
-#   target_link_libraries(harp::harp)
+#   target_link_libraries(${HARP_LIBRARY_DEBUG})
+#   target_link_libraries(${HARP_LIBRARY_RELEASE})
 #
 # Compile the following submodules
 #
-#   utils     : utility functions
-#   opacity   : opacity providers
-#   radiation : radiation and radiation bands
 #   rtsolver  : radiative transfer solvers
 
 include_directories(
@@ -37,10 +36,15 @@ string(TOUPPER ${CMAKE_BUILD_TYPE} buildu)
 set(namel harp)
 string(TOUPPER ${namel} nameu)
 
-file(GLOB src_files *.cpp)
+file(GLOB src_files
+    *.cpp
+    utils/*.cpp
+    opacity/*.cpp
+    radiation/*.cpp
+    )
 
 add_library(${namel}_${buildl}
-    OBJECT
+    STATIC
     ${src_files}
     )
 
@@ -49,23 +53,21 @@ set_target_properties(${namel}_${buildl}
     COMPILE_FLAGS "${CMAKE_CXX_FLAGS_${buildu}}"
     )
 
-add_subdirectory(utils)
-add_subdirectory(opacity)
-add_subdirectory(radiation)
+target_link_libraries(${namel}_${buildl}
+		PRIVATE
+    ${TORCH_LIBRARY}
+    ${TORCH_CPU_LIBRARY}
+    ${C10_LIBRARY}
+    )
+
 add_subdirectory(rtsolver)
-
-add_library(${namel}_${buildl}_final
-  STATIC
-  $<TARGET_OBJECTS:${namel}_${buildl}>
-  $<TARGET_OBJECTS:utils_${buildl}>
-  $<TARGET_OBJECTS:opacity_${buildl}>
-  $<TARGET_OBJECTS:radiation_${buildl}>
-  $<TARGET_OBJECTS:rtsolver_${buildl}>
-  $<TARGET_OBJECTS:cdisort_${buildl}>
-  )
-
-add_library(harp::harp ALIAS ${namel}_${buildl}_final)
 
 set(HARP_INCLUDE_DIR
   "${CMAKE_CURRENT_SOURCE_DIR}"
   CACHE INTERNAL "harp include directory")
+
+set(HARP_LIBRARY_${buildu}
+  harp_${buildl}
+  rtsolver_${buildl}
+  harp::cdisort
+  CACHE INTERNAL "harp library")
