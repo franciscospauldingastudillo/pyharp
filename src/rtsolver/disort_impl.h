@@ -33,8 +33,15 @@ void disort_impl(T* flx, T* prop, T* ftoa, T* temf, int rank_in_column,
     ds.ssalb[ds.nlyr - 1 - i] = PROP(i, ISS);
 
     // Legendre coefficients
-    for (int m = 0; m <= ds.nmom; ++m)
-      ds.pmom[(ds.nlyr - 1 - i) * (ds.nmom + 1) + m] = PROP(i, IPM + m);
+    ds.pmom[(ds.nlyr - 1 - i) * (ds.nmom_nstr + 1)] = 1.;
+    for (int m = 0; m < nprop - 2; ++m) {
+      ds.pmom[(ds.nlyr - 1 - i) * (ds.nmom_nstr + 1) + m + 1] =
+          PROP(i, IPM + m);
+    }
+
+    for (int m = nprop - 2; m < ds.nmom; ++m) {
+      ds.pmom[(ds.nlyr - 1 - i) * (ds.nmom_nstr + 1) + m + 1] = 0.;
+    }
   }
 
   c_disort(&ds, &ds_out);
