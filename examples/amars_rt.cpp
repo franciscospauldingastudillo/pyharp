@@ -26,17 +26,6 @@ harp::DisortOptions disort_options(int nwave, int ncol, int nlyr) {
   return op;
 }
 
-/*void set_disort_bc(harp::Disort &disort, int nwave, int ncol) {
-  for (int i = 0; i < nwave; ++i)
-    for (int j = 0; j < ncol; ++j) {
-      disort->ds(i, j).bc.umu0 = 0.1;
-      disort->ds(i, j).bc.phi0 = 0.0;
-      disort->ds(i, j).bc.albedo = 0.0;
-      disort->ds(i, j).bc.fluor = 0.0;
-      disort->ds(i, j).bc.fisot = 0.0;
-    }
-}*/
-
 torch::Tensor atm_concentration(int ncol, int nlyr, int nspecies) {
   auto conc = torch::ones({ncol, nlyr, nspecies}, torch::kFloat64);
   return conc;
@@ -59,7 +48,6 @@ int main(int argc, char **argv) {
   int nspecies = 2;
 
   harp::Disort disort(disort_options(nwave, ncol, nlyr));
-  // set_disort_bc(disort, nwave, ncol);
 
   harp::S8Fuller s8(harp::S8RTOptions().species_id(0));
   harp::H2SO4Simple h2so4(harp::H2SO4RTOptions().species_id(1));
