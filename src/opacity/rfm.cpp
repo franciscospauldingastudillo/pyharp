@@ -3,7 +3,6 @@
 
 // harp
 #include <math/interpolation.hpp>
-#include <utils/fileio.hpp>
 #include <utils/find_resource.hpp>
 
 #include "rfm.hpp"
@@ -39,18 +38,33 @@ void RFMImpl::reset() {
   int fileid, dimid, varid, err;
   nc_open(full_path.c_str(), NC_NETCDF4, &fileid);
 
-  nc_inq_dimid(fileid, "Wavenumber", &dimid);
-  nc_inq_dimlen(fileid, dimid, kshape);
-  nc_inq_dimid(fileid, "Pressure", &dimid);
-  nc_inq_dimlen(fileid, dimid, kshape + 1);
-  nc_inq_dimid(fileid, "TempGrid", &dimid);
-  nc_inq_dimlen(fileid, dimid, kshape + 2);
+  err = nc_inq_dimid(fileid, "Wavenumber", &dimid);
+  TORCH_CHECK(err == NC_NOERR, nc_strerror(err));
 
-  kaxis = torch::empty({kshape[0] + kshape[1] + kshape[2]}, torch::kFloat64);
+  err = nc_inq_dimlen(fileid, dimid, kshape);
+  TORCH_CHECK(err == NC_NOERR, nc_strerror(err));
 
-  // wavenumber(g)-grid
-  nc_inq_varid(fileid, "Wavenumber", &varid);
-  nc_get_var_double(fileid, varid, kaxis.data_ptr<double>());
+  err = nc_inq_dimid(fileid, "Pressure", &dimid);
+  TORCH_CHECK(err == NC_NOERR, nc_strerror(err));
+
+  err = nc_inq_dimlen(fileid, dimid, kshape + 1);
+  TORCH_CHECK(err == NC_NOERR, nc_strerror(err));
+
+  err = nc_inq_dimid(fileid, "TempGrid", &dimid);
+  TORCH_CHECK(err == NC_NOERR, nc_strerror(err));
+
+  err = nc_inq_dimlen(fileid, dimid, kshape + 2);
+  TORCH_CHECK(err == NC_NOERR, nc_strerror(err));
+
+  kaxis = torch::empty({(int)kshape[0] + (int)kshape[1] + (int)kshape[2]},
+                       torch::kFloat64);
+
+  // wave grid
+  err = nc_inq_varid(fileid, "Wavenumber", &varid);
+  TORCH_CHECK(err == NC_NOERR, nc_strerror(err));
+
+  err = nc_get_var_double(fileid, varid, kaxis.data_ptr<double>());
+  TORCH_CHECK(err == NC_NOERR, nc_strerror(err));
 
   // pressure grid
   err = nc_inq_varid(fileid, "Pressure", &varid);
@@ -72,11 +86,13 @@ void RFMImpl::reset() {
 
   // reference atmosphere
   double* temp = new double[kshape[1]];
-  nc_inq_varid(fileid, "Temperature", &varid);
+  err = nc_inq_varid(fileid, "Temperature", &varid);
+  TORCH_CHECK(err == NC_NOERR, nc_strerror(err));
+
   err = nc_get_var_double(fileid, varid, temp);
   TORCH_CHECK(err == NC_NOERR, nc_strerror(err));
 
-  krefatm = torch::empty({2, kshape[1]}, torch::kFloat64);
+  krefatm = torch::empty({2, (int)kshape[1]}, torch::kFloat64);
   for (int i = 0; i < kshape[1]; i++) {
     krefatm[IPR][i] = kaxis[kshape[0] + i];
     krefatm[ITM][i] = temp[i];
@@ -84,7 +100,8 @@ void RFMImpl::reset() {
   delete[] temp;
 
   // data
-  kdata = torch::empty({kshape[0], kshape[1], kshape[2]}, torch::kFloat64);
+  kdata = torch::empty({(int)kshape[0], (int)kshape[1], (int)kshape[2]},
+                       torch::kFloat64);
   auto name = options.species_names()[options.species_ids()[0]];
 
   err = nc_inq_varid(fileid, name.c_str(), &varid);
@@ -109,8 +126,8 @@ torch::Tensor RFMImpl::forward(
   int nlyr = conc.size(1);
   constexpr int nprop = 1;
 
-  TORCH_CHECK(kwargs.count("pres") > 0, "pressure is required in kwargs");
-  TORCH_CHECK(kwargs.count("temp") > 0, "temperature is required in kwargs");
+  TORCH_CHECK(kwargs.count("pres") > 0, "pres is required in kwargs");
+  TORCH_CHECK(kwargs.count("temp") > 0, "temp is required in kwargs");
 
   auto const& pres = kwargs.at("pres");
   auto const& temp = kwargs.at("temp");
@@ -119,27 +136,27 @@ torch::Tensor RFMImpl::forward(
   auto lnp = pres.log();
   auto tempa = temp - get_reftemp(lnp, krefatm[IPR], krefatm[ITM]);
 
-  auto out = torch::zeros({nwave, ncol, nlyr}, conc.options());
+  auto out = torch::zeros({nwave, ncol, nlyr, nprop}, conc.options());
   auto dims = torch::tensor(
-      {(int)kshape[1], (int)kshape[2]},
+      {(int)kshape[0], (int)kshape[1], (int)kshape[2]},
       torch::TensorOptions().dtype(torch::kInt64).device(conc.device()));
-  auto axis = torch::empty({ncol, nlyr, 2}, torch::kFloat64);
+  auto coord = torch::empty({nwave, ncol, nlyr, 3}, torch::kFloat64);
 
-  // first axis is log-pressure, second is temperature anomaly
-  axis.select(2, IPR).copy_(lnp);
-  axis.select(2, ITM).copy_(tempa);
+  // first coord is wave, second log-pressure, third temperature anomaly
+  coord.select(3, 0).copy_(kaxis.slice(0, 0, nwave).view({-1, 1, 1}));
+  coord.select(3, 1).copy_(lnp);
+  coord.select(3, 2).copy_(tempa);
 
   auto iter = at::TensorIteratorConfig()
                   .resize_outputs(false)
                   .check_all_same_dtype(true)
-                  .declare_static_shape(out.sizes(), /*squash_dims=*/0)
+                  .declare_static_shape(out.sizes(), /*squash_dims=*/3)
                   .add_output(out)
-                  .add_owned_const_input(
-                      axis.unsqueeze(0).expand({nwave, ncol, nlyr, 2}))
+                  .add_input(coord)
                   .build();
 
   if (conc.is_cpu()) {
-    call_interpn_cpu<nprop>(iter, kdata, axis, dims, /*nval=*/nprop);
+    call_interpn_cpu<nprop>(iter, kdata, kaxis, dims, /*nval=*/nprop);
   } else if (conc.is_cuda()) {
     // call_interpn_cuda<1>(iter, kdata, kwave, dims, 1);
   } else {
@@ -148,7 +165,7 @@ torch::Tensor RFMImpl::forward(
 
   // ln(m*2/kmol) -> 1/m
   return 1.E-3 * out.exp() *
-         conc.select(2, options.species_ids()[0]).unsqueeze(0);
+         conc.select(2, options.species_ids()[0]).unsqueeze(0).unsqueeze(-1);
 }
 
 torch::Tensor get_reftemp(torch::Tensor lnp, torch::Tensor klnp,
@@ -163,13 +180,13 @@ torch::Tensor get_reftemp(torch::Tensor lnp, torch::Tensor klnp,
   auto iter = at::TensorIteratorConfig()
                   .resize_outputs(false)
                   .check_all_same_dtype(true)
-                  .declare_static_shape(out.sizes(), /*squash_dims=*/1)
+                  .declare_static_shape(out.sizes())
                   .add_output(out)
-                  .add_owned_const_input(klnp.unsqueeze(0).expand({ncol, -1}))
+                  .add_input(lnp)
                   .build();
 
   if (lnp.is_cpu()) {
-    call_interpn_cpu<1>(iter, klnp, ktemp, dims, /*nval=*/1);
+    call_interpn_cpu<1>(iter, ktemp, klnp, dims, /*nval=*/1);
   } else if (lnp.is_cuda()) {
     // call_interpn_cuda<1>(iter, kdata, kwave, dims, 1);
   } else {
