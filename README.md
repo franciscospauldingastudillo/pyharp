@@ -1,21 +1,23 @@
-pyharp is a 1D general-purpose radiation solver based on the RT model: DISORT. The purpose of this code is for verification/validation of LW and SW components of radiation before their implementation in CANOE.
+# pyharp
 
-Examples of shortwave and longwave radiation are in:
+**pyharp** is a 1D general-purpose radiation solver based on the radiative transfer model **DISORT**. This code is intended for verification and validation of longwave (LW) and shortwave (SW) radiation components before their implementation in **CANOE**.
 
-examples/amars_sw.cpp
-examples/amars_lw.cpp
+## Examples
 
-Note that netcdf is required for this example to work.
+Example implementations of shortwave and longwave radiation are provided in:
 
-To configure:
+- `examples/amars_sw.cpp` (Shortwave radiation)
+- `examples/amars_lw.cpp` (Longwave radiation)
+
+**Note:** NetCDF is required for these examples to function correctly.
+
+## Configuration and Compilation
+
+To configure and build `pyharp`, run the following commands:
+
+```sh
 mkdir build
 cd build
 cmake .. -DNETCDF=ON
 make -j8
 
-If successful, two executable files will be placed in build/bin
-
-amars_lw.release for longwave
-amars_sw.release for shortwave
-
-All credit and thanks to Cheng Li (https://github.com/chengcli/pyharp).
